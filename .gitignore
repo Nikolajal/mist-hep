@@ -1,0 +1,8 @@
+build/
+build-*/
+.cache/
+.claude/worktrees/
+.DS_Store
+*.swp
+*.swo
+/docs/_site/

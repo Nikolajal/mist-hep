@@ -1,0 +1,88 @@
+# .github/workflows/ci.yml
+#
+# Builds and tests mist-hep on every pull request and direct push to main or
+# dev. Unlike mist (which is dependency-free and runs a three-OS matrix),
+# mist-hep needs ROOT, so CI runs inside the official ROOT container on
+# Linux only — ROOT on the macOS/Windows GitHub runners is impractical to
+# provision.
+#
+# mist-hep also depends on mist, so the job builds and installs mist from
+# its main branch into a prefix before configuring mist-hep against it.
+#
+# Make this a required status check in the branch-protection rules
+# (Settings → Branches) to block merges on failure.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: linux / ${{ matrix.build_type }} (ROOT container)
+    runs-on: ubuntu-latest
+    container: rootproject/root:latest   # ships ROOT + CMake + GCC
+
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Check out mist-hep
+      # -----------------------------------------------------------------------
+      - name: Checkout mist-hep
+        uses: actions/checkout@v4
+        with:
+          path: mist-hep
+
+      # -----------------------------------------------------------------------
+      # 2. Check out mist (the dependency) at its main branch
+      # -----------------------------------------------------------------------
+      - name: Checkout mist
+        uses: actions/checkout@v4
+        with:
+          repository: Nikolajal/mist
+          ref: main
+          path: mist
+
+      # -----------------------------------------------------------------------
+      # 3. Build + install mist into a prefix
+      # -----------------------------------------------------------------------
+      - name: Build and install mist
+        run: |
+          cmake -S mist -B mist/build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          cmake --build mist/build --parallel
+          cmake --install mist/build --prefix "$GITHUB_WORKSPACE/mist-install"
+
+      # -----------------------------------------------------------------------
+      # 4. Configure mist-hep against the installed mist
+      # -----------------------------------------------------------------------
+      - name: Configure mist-hep
+        run: >
+          cmake -S mist-hep -B mist-hep/build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DMIST_HEP_BUILD_TESTS=ON
+          -Dmist_DIR="$GITHUB_WORKSPACE/mist-install/lib/cmake/mist"
+
+      # -----------------------------------------------------------------------
+      # 5. Build
+      # -----------------------------------------------------------------------
+      - name: Build mist-hep
+        run: cmake --build mist-hep/build --parallel
+
+      # -----------------------------------------------------------------------
+      # 6. Test
+      # -----------------------------------------------------------------------
+      - name: Run tests
+        working-directory: mist-hep/build
+        run: ctest --output-on-failure

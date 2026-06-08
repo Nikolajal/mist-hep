@@ -1,0 +1,27 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Re-resolve the dependencies that mist::hep's interface drags in.
+# Without this, find_package(mist-hep) would succeed but the imported
+# target would be broken at link time.
+find_dependency(mist 1)
+find_dependency(ROOT 6.24
+    COMPONENTS Core Hist Graf Gpad RIO Tree
+               MathCore Matrix Minuit
+)
+
+include("${CMAKE_CURRENT_LIST_DIR}/mist-hepTargets.cmake")
+
+# The exported target is `mist::mist-hep`. The `mist::hep` alias that
+# CONTRIBUTING / the docs tell consumers to link is created by the project's
+# own CMakeLists for the add_subdirectory()/FetchContent path, but CMake
+# ALIAS targets are not part of an exported target set — so under
+# find_package() only `mist::mist-hep` exists. Recreate the alias here so the
+# documented `target_link_libraries(x mist::hep)` works in both consumption
+# modes.
+if(NOT TARGET mist::hep)
+    add_library(mist::hep ALIAS mist::mist-hep)
+endif()
+
+check_required_components(mist-hep)
